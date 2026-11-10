@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>灯下 · 肉鸽生存</title>
+  <style>
+    :root { --gold: #e8b86d; --ink: #f4efe4; --bg: #0b0c10; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud, #overlay { position: fixed; inset: 0; pointer-events: none; }
+    #top { position: absolute; top: 16px; left: 0; right: 0; text-align: center; }
+    #time { font-size: 28px; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 12px #000; }
+    #kills { opacity: 0.7; font-size: 13px; margin-top: 4px; }
+    #bars { position: absolute; left: 18px; right: 18px; bottom: 18px; }
+    .bar { height: 10px; background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+    .bar > i { display: block; height: 100%; width: 0; }
+    #hp i { background: linear-gradient(90deg, #c45c4a, #e8b86d); }
+    #xp i { background: linear-gradient(90deg, #6aa8ff, #c9e4ff); }
+    #stats { position: absolute; top: 16px; left: 16px; font-size: 13px; opacity: .8; line-height: 1.7; }
+    #overlay { display: flex; align-items: center; justify-content: center; background: rgba(6,7,10,.72); pointer-events: auto; }
+    .hidden { display: none !important; }
+    #overlay.hidden { display: none !important; }
+    .panel { width: min(560px, calc(100% - 32px)); text-align: center; }
+    .panel h1 { font-size: 42px; letter-spacing: .2em; color: var(--gold); }
+    .panel p { margin: 12px 0 22px; opacity: .78; line-height: 1.7; }
+    .btn { background: var(--gold); color: #1a1208; border: 0; border-radius: 999px; padding: 12px 28px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .cards { display: grid; gap: 12px; }
+    .card { background: #16181f; border: 1px solid #2a2e38; border-radius: 16px; padding: 16px; text-align: left; cursor: pointer; }
+    .card:hover { border-color: var(--gold); }
+    .card b { color: var(--gold); display: block; margin-bottom: 6px; }
+    .card span { font-size: 13px; opacity: .75; }
+    #joy { display: none; position: fixed; left: 28px; bottom: 72px; width: 110px; height: 110px; border: 1px solid rgba(255,255,255,.15); border-radius: 50%; pointer-events: none; }
+    @media (pointer: coarse) { #joy { display: block; } }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <div id="stats"></div>
+    <div id="top"><div id="time">00:00</div><div id="kills">击杀 0</div></div>
+    <div id="bars"><div class="bar" id="hp"><i></i></div><div class="bar" id="xp"><i></i></div></div>
+    <div id="joy"></div>
+  </div>
+  <div id="overlay">
+    <div class="panel" id="menu">
+      <h1>灯下</h1>
+      <p>参考《吸血鬼幸存者》的肉鸽生存：只用走，武器自己打。<br>捡经验升级，三选一强化，活过 5 分钟。</p>
+      <button class="btn" id="start">开始夜行</button>
+    </div>
+    <div class="panel hidden" id="levelup">
+      <h1 style="font-size:28px;letter-spacing:.08em">升级</h1>
+      <p>选一项带走</p>
+      <div class="cards" id="choices"></div>
+    </div>
+    <div class="panel hidden" id="end">
+      <h1 id="endTitle">熄灯</h1>
+      <p id="endText"></p>
+      <button class="btn" id="again">再走一遭</button>
+    </div>
+  </div>
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const overlay = document.getElementById("overlay");
+    const keys = {};
+    const stick = { active: false, dx: 0, dy: 0 };
+    let W = 0, H = 0, state = "menu", paused = false, acc = 0, last = 0;
+
+    const POOL = [
+      { id: "flame", name: "灯焰", kind: "weapon", desc: "灯火绕身旋转，近身灼烧。" },
+      { id: "tag", name: "飞签", kind: "weapon", desc: "朝最近的影子射出黄符。" },
+      { id: "coin", name: "铜钱", kind: "weapon", desc: "铜钱飞出再飞回，一路割伤。" },
+      { id: "aura", name: "香火", kind: "weapon", desc: "身周一圈香火，持续伤敌。" },
+      { id: "bolt", name: "惊雷", kind: "weapon", desc: "随机劈中附近敌人。" },
+      { id: "hp", name: "健体", kind: "passive", desc: "最大生命 +25，并回一点血。" },
+      { id: "spd", name: "疾行", kind: "passive", desc: "移动速度 +14%。" },
+      { id: "cd", name: "聚气", kind: "passive", desc: "所有武器冷却更快。" },
+      { id: "mag", name: "吸金", kind: "passive", desc: "捡经验的范围变大。" },
+      { id: "atk", name: "锋锐", kind: "passive", desc: "所有伤害 +18%。" }
+    ];
+
+    let G;
+
+    function reset() {
+      G = {
+        t: 0, kills: 0, shake: 0,
+        p: { x: 0, y: 0, hp: 100, max: 100, spd: 210, r: 14, lv: 1, xp: 0, need: 6, mag: 110, atk: 1, cd: 1 },
+        weapons: { flame: 1 },
+        wcd: {},
+        enemies: [], gems: [], bullets: [], parts: [], nums: []
+      };
+    }
+
+    function resize() {
+      W = canvas.width = innerWidth * devicePixelRatio;
+      H = canvas.height = innerHeight * devicePixelRatio;
+      canvas.style.width = innerWidth + "px";
+      canvas.style.height = innerHeight + "px";
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    }
+    addEventListener("resize", resize);
+    resize();
+
+    addEventListener("keydown", (e) => { keys[e.key.toLowerCase()] = true; if (e.key === " ") e.preventDefault(); });
+    addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+    addEventListener("pointerdown", (e) => {
+      if (state !== "play") return;
+      stick.active = true;
+      stick.ox = e.clientX; stick.oy = e.clientY;
+    });
+    addEventListener("pointermove", (e) => {
+      if (!stick.active) return;
+      stick.dx = (e.clientX - stick.ox) / 50;
+      stick.dy = (e.clientY - stick.oy) / 50;
+      const m = Math.hypot(stick.dx, stick.dy) || 1;
+      if (m > 1) { stick.dx /= m; stick.dy /= m; }
+    });
+    addEventListener("pointerup", () => { stick.active = false; stick.dx = stick.dy = 0; });
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    function angTo(ax, ay, bx, by) { return Math.atan2(by - ay, bx - ax); }
+    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+    function spawnEnemy(kind) {
+      const a = rand(0, Math.PI * 2);
+      const d = Math.max(innerWidth, innerHeight) * 0.55 + rand(20, 140);
+      const e = { x: G.p.x + Math.cos(a) * d, y: G.p.y + Math.sin(a) * d, kind, hit: 0 };
+      if (kind === "shade") Object.assign(e, { hp: 12, spd: 70, r: 11, xp: 1, color: "#7a8499" });
+      if (kind === "runner") Object.assign(e, { hp: 8, spd: 140, r: 9, xp: 1, color: "#c97b63" });
+      if (kind === "tank") Object.assign(e, { hp: 46, spd: 48, r: 18, xp: 3, color: "#5d6b52" });
+      if (kind === "boss") Object.assign(e, { hp: 420, spd: 62, r: 34, xp: 20, color: "#d4a017" });
+      e.max = e.hp;
+      G.enemies.push(e);
+    }
+
+    function director(dt) {
+      const t = G.t;
+      let rate = 1.1 + t / 40;
+      if (t > 60) rate += 0.8;
+      if (t > 120) rate += 1.2;
+      G._acc = (G._acc || 0) + dt * rate;
+      while (G._acc > 0.38) {
+        G._acc -= 0.38;
+        const roll = Math.random();
+        spawnEnemy(t > 50 && roll < 0.18 ? "tank" : t > 25 && roll < 0.38 ? "runner" : "shade");
+      }
+      if (!G.boss1 && t > 90) { G.boss1 = true; spawnEnemy("boss"); }
+      if (!G.boss2 && t > 210) { G.boss2 = true; spawnEnemy("boss"); spawnEnemy("boss"); }
+    }
+
+    function nearest(from, list) {
+      let best = null, d = 1e9;
+      for (const o of list) {
+        const k = Math.hypot(o.x - from.x, o.y - from.y);
+        if (k < d) { d = k; best = o; }
+      }
+      return best;
+    }
+
+    function canHit(e, id, gap) {
+      e.cool = e.cool || {};
+      if ((e.cool[id] || 0) > G.t) return false;
+      e.cool[id] = G.t + gap;
+      return true;
+    }
+
+    function hurt(e, dmg, hx, hy) {
+      const v = Math.max(1, Math.round(dmg * G.p.atk));
+      e.hp -= v;
+      e.hit = 0.12;
+      G.nums.push({ x: e.x, y: e.y - e.r, t: 0.5, v });
+      const a = Math.atan2(e.y - (hy ?? G.p.y), e.x - (hx ?? G.p.x));
+      e.x += Math.cos(a) * 8;
+      e.y += Math.sin(a) * 8;
+      if (e.hp <= 0) {
+        G.kills++;
+        G.gems.push({ x: e.x, y: e.y, v: e.xp });
+        for (let i = 0; i < 8; i++) G.parts.push({ x: e.x, y: e.y, a: rand(0, 6.28), s: rand(40, 120), t: 0.4, c: e.color });
+        G.enemies.splice(G.enemies.indexOf(e), 1);
+      }
+    }
+
+    function fireWeapons(dt) {
+      const p = G.p, w = G.weapons;
+      const cd = (base) => base * G.p.cd;
+      const tick = (id, base, fn) => {
+        G.wcd[id] = (G.wcd[id] || 0) - dt;
+        if (G.wcd[id] <= 0) { G.wcd[id] = cd(base); fn(); }
+      };
+
+      if (w.flame) {
+        const n = 2 + w.flame;
+        const rad = 42 + w.flame * 8;
+        for (let i = 0; i < n; i++) {
+          const a = G.t * 2.2 + i * (Math.PI * 2 / n);
+          const x = p.x + Math.cos(a) * rad;
+          const y = p.y + Math.sin(a) * rad;
+          G._orbs = G._orbs || [];
+          G._orbs[i] = { x, y };
+          for (const e of G.enemies) if (Math.hypot(e.x - x, e.y - y) < e.r + 10 && canHit(e, "flame", 0.28)) hurt(e, 7 + w.flame * 2, x, y);
+        }
+      }
+      if (w.tag) tick("tag", 0.55 - w.tag * 0.05, () => {
+        const e = nearest(p, G.enemies); if (!e) return;
+        const a = angTo(p.x, p.y, e.x, e.y);
+        G.bullets.push({ x: p.x, y: p.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, r: 5, dmg: 10 + w.tag * 4, life: 1.1, kind: "tag" });
+      });
+      if (w.coin) tick("coin", 1.3, () => {
+        const e = nearest(p, G.enemies); if (!e) return;
+        const a = angTo(p.x, p.y, e.x, e.y);
+        G.bullets.push({ x: p.x, y: p.y, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, r: 7, dmg: 12 + w.coin * 5, life: 1.6, kind: "coin", back: 0.7 });
+      });
+      if (w.aura) {
+        const rad = 58 + w.aura * 10;
+        for (const e of G.enemies) if (dist(e, p) < e.r + rad && canHit(e, "aura", 0.22)) hurt(e, 8 + w.aura * 3, p.x, p.y);
+      }
+      if (w.bolt) tick("bolt", 1.05 - w.bolt * 0.08, () => {
+        const near = G.enemies.filter((e) => dist(e, p) < 260);
+        if (!near.length) return;
+        const e = pick(near);
+        hurt(e, 18 + w.bolt * 8);
+        G.parts.push({ x: e.x, y: e.y, a: 0, s: 0, t: 0.2, c: "#9ad0ff", bolt: true, tx: p.x, ty: p.y });
+      });
+    }
+
+    function applyPick(id) {
+      const item = POOL.find((x) => x.id === id);
+      if (item.kind === "weapon") G.weapons[id] = (G.weapons[id] || 0) + 1;
+      if (id === "hp") { G.p.max += 25; G.p.hp = Math.min(G.p.max, G.p.hp + 25); }
+      if (id === "spd") G.p.spd *= 1.14;
+      if (id === "cd") G.p.cd *= 0.88;
+      if (id === "mag") G.p.mag += 40;
+      if (id === "atk") G.p.atk *= 1.18;
+    }
+
+    function openLevel() {
+      paused = true;
+      overlay.classList.remove("hidden");
+      menu.classList.add("hidden");
+      end.classList.add("hidden");
+      levelup.classList.remove("hidden");
+      const have = Object.keys(G.weapons);
+      const pool = POOL.filter((x) => x.kind === "passive" || !G.weapons[x.id] || G.weapons[x.id] < 5);
+      const choices = [];
+      const copy = pool.slice();
+      while (choices.length < 3 && copy.length) {
+        const i = Math.floor(Math.random() * copy.length);
+        choices.push(copy.splice(i, 1)[0]);
+      }
+      const box = document.getElementById("choices");
+      box.innerHTML = choices.map((c) => {
+        const lv = G.weapons[c.id] ? ` · ${G.weapons[c.id] + 1} 级` : "";
+        return `<button class="card" data-id="${c.id}"><b>${c.name}${lv}</b><span>${c.desc}</span></button>`;
+      }).join("");
+      box.onclick = (e) => {
+        const b = e.target.closest("[data-id]");
+        if (!b) return;
+        applyPick(b.dataset.id);
+        paused = false;
+        overlay.classList.add("hidden");
+      };
+    }
+
+    function gain(n) {
+      G.p.xp += n;
+      while (G.p.xp >= G.p.need) {
+        G.p.xp -= G.p.need;
+        G.p.lv++;
+        G.p.need = Math.floor(8 + G.p.lv * 4.2);
+        G.p.hp = Math.min(G.p.max, G.p.hp + 8);
+        openLevel();
+      }
+    }
+
+    function finish(win) {
+      state = "end";
+      paused = true;
+      overlay.classList.remove("hidden");
+      menu.classList.add("hidden");
+      levelup.classList.add("hidden");
+      end.classList.remove("hidden");
+      document.getElementById("endTitle").textContent = win ? "灯还亮着" : "熄灯";
+      const m = Math.floor(G.t / 60), s = Math.floor(G.t % 60);
+      document.getElementById("endText").textContent = `存活 ${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")} · 击杀 ${G.kills} · 等级 ${G.p.lv}`;
+    }
+
+    function step(dt) {
+      const p = G.p;
+      let mx = 0, my = 0;
+      if (keys["w"] || keys["arrowup"]) my -= 1;
+      if (keys["s"] || keys["arrowdown"]) my += 1;
+      if (keys["a"] || keys["arrowleft"]) mx -= 1;
+      if (keys["d"] || keys["arrowright"]) mx += 1;
+      mx += stick.dx; my += stick.dy;
+      const m = Math.hypot(mx, my);
+      if (m > 0) { p.x += (mx / m) * p.spd * dt; p.y += (my / m) * p.spd * dt; }
+
+      G.t += dt;
+      G.shake = Math.max(0, G.shake - dt);
+      director(dt);
+      fireWeapons(dt);
+
+      for (const e of G.enemies) {
+        const a = angTo(e.x, e.y, p.x, p.y);
+        e.x += Math.cos(a) * e.spd * dt;
+        e.y += Math.sin(a) * e.spd * dt;
+        e.hit = Math.max(0, e.hit - dt);
+        if (dist(e, p) < e.r + p.r) {
+          p.hp -= (e.kind === "boss" ? 22 : 12) * dt;
+          G.shake = 0.12;
+        }
+      }
+
+      for (let i = G.bullets.length - 1; i >= 0; i--) {
+        const b = G.bullets[i];
+        if (b.kind === "coin" && b.life < b.back) {
+          const a = angTo(b.x, b.y, p.x, p.y);
+          b.vx = Math.cos(a) * 320; b.vy = Math.sin(a) * 320;
+        }
+        b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+        for (const e of G.enemies) {
+          if (Math.hypot(e.x - b.x, e.y - b.y) < e.r + b.r) { hurt(e, b.dmg, b.x, b.y); if (b.kind !== "coin") b.life = 0; }
+        }
+        if (b.life <= 0) G.bullets.splice(i, 1);
+      }
+
+      for (let i = G.gems.length - 1; i >= 0; i--) {
+        const g = G.gems[i];
+        const d = dist(g, p);
+        if (d < p.mag) {
+          const a = angTo(g.x, g.y, p.x, p.y);
+          g.x += Math.cos(a) * 280 * dt;
+          g.y += Math.sin(a) * 280 * dt;
+        }
+        if (d < 18) { gain(g.v); G.gems.splice(i, 1); }
+      }
+
+      for (let i = G.parts.length - 1; i >= 0; i--) {
+        const q = G.parts[i];
+        q.t -= dt; q.x += Math.cos(q.a) * q.s * dt; q.y += Math.sin(q.a) * q.s * dt;
+        if (q.t <= 0) G.parts.splice(i, 1);
+      }
+      for (let i = G.nums.length - 1; i >= 0; i--) {
+        G.nums[i].t -= dt; G.nums[i].y -= 24 * dt;
+        if (G.nums[i].t <= 0) G.nums.splice(i, 1);
+      }
+
+      if (p.hp <= 0) finish(false);
+      if (G.t >= 300) finish(true);
+    }
+
+    function cam() {
+      return { x: innerWidth / 2 - G.p.x, y: innerHeight / 2 - G.p.y };
+    }
+
+    function draw() {
+      const { x: cx, y: cy } = G ? cam() : { x: 0, y: 0 };
+      const sx = (G && G.shake ? rand(-4, 4) : 0);
+      const sy = (G && G.shake ? rand(-4, 4) : 0);
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      ctx.fillStyle = "#0b0c10";
+      ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+      ctx.save();
+      ctx.translate(cx + sx, cy + sy);
+      ctx.strokeStyle = "rgba(232,184,109,.06)";
+      ctx.lineWidth = 1;
+      for (let i = -20; i <= 20; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 80, -1600); ctx.lineTo(i * 80, 1600); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-1600, i * 80); ctx.lineTo(1600, i * 80); ctx.stroke();
+      }
+
+      if (G) {
+        for (const g of G.gems) {
+          ctx.fillStyle = "#7ec8ff";
+          ctx.beginPath(); ctx.arc(g.x, g.y, 4, 0, 7); ctx.fill();
+        }
+        for (const b of G.bullets) {
+          ctx.fillStyle = b.kind === "coin" ? "#e8b86d" : "#f3e2b0";
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+        }
+        if (G.weapons.aura) {
+          ctx.strokeStyle = "rgba(232,184,109,.25)";
+          ctx.beginPath(); ctx.arc(G.p.x, G.p.y, 58 + G.weapons.aura * 10, 0, 7); ctx.stroke();
+        }
+        if (G._orbs) for (const o of G._orbs) {
+          if (!o) continue;
+          ctx.fillStyle = "#ffd38a";
+          ctx.beginPath(); ctx.arc(o.x, o.y, 7, 0, 7); ctx.fill();
+        }
+        for (const e of G.enemies) {
+          ctx.fillStyle = e.hit > 0 ? "#fff" : e.color;
+          ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 7); ctx.fill();
+          if (e.kind === "boss") {
+            ctx.fillStyle = "rgba(0,0,0,.4)";
+            ctx.fillRect(e.x - 24, e.y - e.r - 10, 48, 4);
+            ctx.fillStyle = "#e8b86d";
+            ctx.fillRect(e.x - 24, e.y - e.r - 10, 48 * (e.hp / e.max), 4);
+          }
+        }
+        const p = G.p;
+        ctx.shadowColor = "#e8b86d";
+        ctx.shadowBlur = 22;
+        ctx.fillStyle = "#f4efe4";
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#e8b86d";
+        ctx.beginPath(); ctx.arc(p.x, p.y - 6, 4, 0, 7); ctx.fill();
+        for (const q of G.parts) {
+          ctx.globalAlpha = Math.max(0, q.t * 2);
+          if (q.bolt) {
+            ctx.strokeStyle = "#9ad0ff";
+            ctx.beginPath(); ctx.moveTo(q.tx, q.ty); ctx.lineTo(q.x, q.y); ctx.stroke();
+          } else {
+            ctx.fillStyle = q.c;
+            ctx.fillRect(q.x, q.y, 3, 3);
+          }
+          ctx.globalAlpha = 1;
+        }
+        ctx.font = "12px sans-serif";
+        ctx.fillStyle = "#fff";
+        for (const n of G.nums) { ctx.globalAlpha = n.t * 2; ctx.fillText(n.v, n.x, n.y); ctx.globalAlpha = 1; }
+      }
+      ctx.restore();
+
+      if (G && state === "play") {
+        document.getElementById("time").textContent =
+          String(Math.floor(G.t / 60)).padStart(2, "0") + ":" + String(Math.floor(G.t % 60)).padStart(2, "0");
+        document.getElementById("kills").textContent = "击杀 " + G.kills;
+        document.querySelector("#hp i").style.width = (100 * G.p.hp / G.p.max) + "%";
+        document.querySelector("#xp i").style.width = (100 * G.p.xp / G.p.need) + "%";
+        const ws = Object.entries(G.weapons).map(([k, v]) => (POOL.find((x) => x.id === k)?.name || k) + v).join("  ");
+        document.getElementById("stats").innerHTML = `Lv.${G.p.lv}<br>${ws}`;
+      }
+    }
+
+    function loop(ts) {
+      const now = ts / 1000;
+      let dt = Math.min(0.033, now - (last || now));
+      last = now;
+      if (state === "play" && !paused) {
+        acc += dt;
+        while (acc >= 1 / 60) { step(1 / 60); acc -= 1 / 60; }
+      }
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    const menu = document.getElementById("menu");
+    const levelup = document.getElementById("levelup");
+    const end = document.getElementById("end");
+
+    function start() {
+      reset();
+      state = "play";
+      paused = false;
+      overlay.classList.add("hidden");
+    }
+    document.getElementById("start").onclick = start;
+    document.getElementById("again").onclick = start;
+  </script>
+</body>
+</html>
