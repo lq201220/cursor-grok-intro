@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>李江盛 — 自我介绍</title>
+  <title>李江盛 — 个人简历</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
@@ -59,9 +59,8 @@
     .top-row {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 22px;
+      align-items: flex-start;
+      gap: 24px;
     }
 
     .eyebrow {
@@ -70,7 +69,7 @@
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--accent);
-      margin: 0;
+      margin: 0 0 16px;
     }
 
     h1 {
@@ -91,16 +90,22 @@
     }
 
     .stamp {
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 11px;
+      width: 148px;
+      height: 148px;
+      padding: 0;
       border: 1px dashed var(--accent);
-      color: var(--accent);
-      padding: 10px 12px;
-      text-align: right;
-      white-space: nowrap;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #0a0c0b;
     }
 
-    .stamp strong { display: block; color: var(--ink); font-size: 12px; margin-top: 4px; }
+    .stamp img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 22% 88%;
+      display: block;
+    }
 
     .lead {
       font-size: 20px;
@@ -278,7 +283,7 @@
         flex-direction: column;
         align-items: flex-start;
       }
-      .stamp { text-align: left; }
+      .stamp { width: 112px; height: 112px; }
       footer { flex-direction: column; }
     }
   </style>
@@ -287,17 +292,17 @@
   <div class="wrap">
     <header>
       <div class="top-row">
-        <p class="eyebrow">Self Intro / 001</p>
+        <div>
+          <p class="eyebrow">Resume / 001</p>
+          <h1>
+            李江盛
+            <span>个人简历 · Li Jiangsheng</span>
+          </h1>
+        </div>
         <div class="stamp">
-          NAME
-          <strong>李江盛</strong>
-          LI JIANGSHENG
+          <img src="avatar.jpg" alt="李江盛" />
         </div>
       </div>
-      <h1>
-        李江盛
-        <span>一份写给网上的自我介绍。</span>
-      </h1>
     </header>
 
     <p class="lead">
@@ -306,41 +311,51 @@
     </p>
 
     <section>
-      <h2>关于我</h2>
+      <h2>基本信息</h2>
+      <div class="stats">
+        <div class="stat"><b>李江盛</b><span>姓名</span></div>
+        <div class="stat"><b>中文</b><span>交流语言</span></div>
+        <div class="stat"><b>动手</b><span>做事方式</span></div>
+        <div class="stat"><b>GitHub</b><span>lq201220</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>专业技能</h2>
       <div class="cards">
         <article class="card">
           <p class="num">01 / MAKE</p>
-          <h3>动手做</h3>
-          <p>网页、小工具、能落地的流程。先做出第一版，再按用的人怎么说去改。</p>
+          <h3>动手实现</h3>
+          <p>网页、小工具、能落地的流程。先做出第一版，再按反馈改到能用。</p>
         </article>
         <article class="card">
           <p class="num">02 / WRITE</p>
-          <h3>说清楚</h3>
+          <h3>表达清楚</h3>
           <p>用中文想、用中文写。把复杂的事收成别人一看就懂的一页。</p>
         </article>
         <article class="card">
           <p class="num">03 / SHIP</p>
-          <h3>放到网上</h3>
-          <p>东西做完就公开。能点开、能转发，比放在文件夹里更有用。</p>
+          <h3>交付上线</h3>
+          <p>做完就放到网上。能点开、能转发，比放在文件夹里更有用。</p>
         </article>
       </div>
     </section>
 
     <section>
-      <h2>我想被怎样认识</h2>
+      <h2>自我评价</h2>
       <div class="split">
         <div class="panel">
-          <h3>先记住这几句</h3>
+          <h3>我想被怎样认识</h3>
           <ul>
             <li>我是李江盛。做事不急，但会把该做的做完。</li>
             <li>喜欢把想法收成能打开的东西，而不是一堆口头计划。</li>
             <li>会用 AI 辅助编码，内容和结构自己把关。</li>
-            <li>学校、经历、作品要写进这页，随时可以补上。</li>
+            <li>学校、实习和作品，我会陆续补到这页。</li>
           </ul>
         </div>
         <div class="panel terminal">
           <div><span class="prompt">whoami</span> <span class="cmd">李江盛</span></div>
-          <div class="out"># 中文 · 做事 · 先上线再打磨</div>
+          <div class="out"># 个人简历 · 中文 · 先做出来再打磨</div>
           <div><span class="prompt">github</span> <span class="cmd">lq201220</span></div>
           <div class="out">bio: 树懒</div>
           <div class="out">下一句：你好，我是李江盛。<span class="cursor"></span></div>
@@ -348,18 +363,8 @@
       </div>
     </section>
 
-    <section>
-      <h2>名片</h2>
-      <div class="stats">
-        <div class="stat"><b>李江盛</b><span>中文名</span></div>
-        <div class="stat"><b>中文</b><span>交流语言</span></div>
-        <div class="stat"><b>动手</b><span>先做出来再改</span></div>
-        <div class="stat"><b>GitHub</b><span>lq201220</span></div>
-      </div>
-    </section>
-
     <footer>
-      <span>李江盛 · 自我介绍 · <a href="https://github.com/lq201220">github.com/lq201220</a></span>
+      <span>李江盛 · 个人简历 · <a href="https://github.com/lq201220">github.com/lq201220</a></span>
       <span>2026-11-10</span>
     </footer>
   </div>
