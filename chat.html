@@ -565,7 +565,7 @@
             <button class="tool" data-skill="帮我写作">帮我写作</button>
             <button class="tool" id="moreSkill">更多</button>
             <div class="spacer"></div>
-            <button class="tool" id="modelBtn">GLM-5.3</button>
+            <button class="tool" id="modelBtn">DeepSeek</button>
             <button class="send" id="sendBtn" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
             </button>
@@ -596,7 +596,7 @@
         <label>API Key</label>
         <input id="apiKey" type="password" placeholder="华为云 MaaS API Key" />
         <label>模型</label>
-        <input id="apiModel" placeholder="glm-5.3" />
+        <input id="apiModel" placeholder="deepseek-v4.1-flash-1017" />
       </div>
       <div class="row">
         <button class="ghost" id="closeModal">取消</button>
@@ -611,7 +611,7 @@
     const defaultSettings = {
       base: "https://api.modelarts-maas.com/openai/v1",
       key: "",
-      model: "glm-5.3"
+      model: "deepseek-v4.1-flash-1017"
     };
     const state = {
       mode: "chat",
@@ -636,16 +636,17 @@
         const raw = JSON.parse(localStorage.getItem(storeKey) || "{}");
         state.chats = raw.chats || [];
         state.settings = { ...defaultSettings, ...(raw.settings || {}) };
-        if (!state.settings.base || /pollinations|openai\.com/i.test(state.settings.base) || state.settings.model === "openai") {
+        if (!state.settings.base || /pollinations|openai\.com/i.test(state.settings.base) || state.settings.model === "openai" || state.settings.model === "glm-5.3") {
           state.settings.base = defaultSettings.base;
           state.settings.model = defaultSettings.model;
         }
         if (window.SHENGYU_CONFIG) {
           state.settings = { ...state.settings, ...window.SHENGYU_CONFIG };
         }
+        save();
       } catch (e) { state.chats = []; }
       const modelBtn = $("modelBtn");
-      if (modelBtn) modelBtn.textContent = (state.settings.model || "glm-5.3").toUpperCase();
+      if (modelBtn) modelBtn.textContent = state.settings.model === "deepseek-v4.1-flash-1017" ? "DeepSeek" : (state.settings.model || "DeepSeek");
     }
 
     function save() {
@@ -740,26 +741,22 @@
         : "你是盛语，一个中文智能助手。语气自然、简洁、好用。不要自称豆包。李江盛是本站主人；被问及时不要编造他的学历、任职和奖项，不知道就明说。";
       const skillHint = state.skill && state.skill !== "对话" ? `\n当前技能：${state.skill}。请按这个方向回答。` : "";
       const payload = {
-        model: state.settings.model || "glm-5.3",
+        model: state.settings.model || "deepseek-v4.1-flash-1017",
         max_tokens: 2048,
         messages: [{ role: "system", content: sys + skillHint }, ...messages.map((m) => ({ role: m.role, content: m.content }))]
       };
 
       const local = location.hostname === "127.0.0.1" || location.hostname === "localhost";
-      const base = (state.settings.base || defaultSettings.base).replace(/\/$/, "");
-      let url;
-      if (local) url = "/api/maas";
-      else if (!state.settings.key) url = "https://text.pollinations.ai/openai";
-      else url = base.endsWith("/chat/completions") ? base : base + "/chat/completions";
+      if (!local) throw new Error("华为云 DeepSeek 请用本机打开 http://127.0.0.1:8765/chat.html ，公开网页会被跨域拦住，也不能把密钥放上去。");
+      const url = "/api/maas";
       const headers = { "Content-Type": "application/json" };
-      if (!local && state.settings.key) headers.Authorization = "Bearer " + state.settings.key;
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 45000);
       const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload), signal: ctrl.signal });
       clearTimeout(timer);
       const raw = await res.text();
-      if (!res.ok) throw new Error("华为云 " + res.status + " " + raw.slice(0, 180));
+      if (!res.ok) throw new Error("接口 " + res.status + " " + raw.slice(0, 180));
       const data = JSON.parse(raw);
       const msg = data.choices?.[0]?.message || {};
       const text = msg.content || msg.reasoning_content || data.content || data.text;
